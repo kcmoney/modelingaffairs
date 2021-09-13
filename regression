@@ -1,0 +1,303 @@
+library(ggplot2)
+library(COUNT)
+library(pscl)
+library(boot)
+data("affairs")
+attach(affairs)
+set.seed(1)
+
+dtt = sort(sample(nrow(affairs),nrow(affairs)*.7))
+affair1_train = affairs[dtt,]
+affair1_test = affairs[-dtt,]
+detach(affairs)
+attach(affair1_train)
+
+model1 <- glm(naffairs ~ vryunhap + unhap + avgmarr + hapavg + vryhap,family = "poisson")
+model2 <- glm(naffairs ~ antirel + notrel + slghtrel + smerel + vryrel,family = "poisson")
+model3 <- glm(naffairs ~ yrsmarr1 + yrsmarr2 + yrsmarr3 + yrsmarr4 + yrsmarr5 + 
+yrsmarr6, family = "poisson")
+
+AIC(model1,model2,model3)
+BIC(model1,model2,model3)
+
+# Full model
+m1 = glm(naffairs~ kids + vryunhap + unhap + avgmarr + hapavg + 
+           vryhap + antirel + notrel + slghtrel + smerel + vryrel + 
+           yrsmarr1 + yrsmarr2 + yrsmarr3 + yrsmarr4 + yrsmarr5 + 
+           yrsmarr6, family = "poisson",data = affair1_train)
+m2 <- zeroinfl(naffairs~ kids + vryunhap + unhap + avgmarr + hapavg 
+               + antirel + notrel + slghtrel + smerel + 
+                 yrsmarr1 + yrsmarr2 + yrsmarr3 + yrsmarr4 + yrsmarr5)
+# Model Selection
+
+# Backward AIC
+backAIC1 <- step(m1,direction="backward", data=affair1_train)
+backAIC2 <- step(m2,direction="backward", data=affair1_train)
+
+#Forward AIC
+mint1 <- glm(naffairs~1,data=affair1_train)
+forwardAIC1 <- step(mint1,scope=list(lower=~1,upper=~kids + vryunhap + unhap + avgmarr +
+hapavg +  vryhap + antirel + notrel + slghtrel + smerel + vryrel +  yrsmarr1 + yrsmarr2 +
+yrsmarr3 + yrsmarr4 + yrsmarr5 + yrsmarr6),direction = "forward",data=affair1_train)
+
+mint2 <- zeroinfl(naffairs~1,data=affair1_train)
+forwardAIC2 <- step(mint2,scope=list(lower=~1,upper= ~ kids + vryunhap + unhap + avgmarr +
+hapavg +antirel + notrel + slghtrel + smerel + yrsmarr1 + yrsmarr2 + yrsmarr3 + yrsmarr4 +
+yrsmarr5),direction = "forward",data=affair1_train)
+
+#Backward BIC
+n1=length(m1$residuals)
+backBIC1 <- step(m1,direction="backward", data=affair1_train,k=log(n1))
+
+n2=length(m2$residuals)
+backBIC2 <- step(m2,direction = "backward",data=affair1_train,k=log(n2))
+
+#Forward BIC
+forwardBIC1 <- step(mint1,scope=list(lower=~1,upper=~kids + vryunhap + unhap + avgmarr +
+hapavg + vryhap + antirel + notrel + slghtrel + smerel + vryrel + yrsmarr1 + yrsmarr2 + yrsmarr3
++yrsmarr4 + yrsmarr5 +  yrsmarr6),direction = "forward",data=affair1_train,k=log(n1))
+
+forwardBIC2 <- step(mint2,scope=list(lower=~1,upper= ~ kids + vryunhap + unhap + avgmarr +
+hapavg +antirel + notrel + slghtrel + smerel + yrsmarr1 +yrsmarr2 + yrsmarr3 + yrsmarr4 +
+yrsmarr5),direction = "forward",data=affair1_train,k=log(n2))
+
+# models from backward AIC
+
+m3 <- glm(naffairs ~ kids + vryunhap + unhap + avgmarr + hapavg + antirel + slghtrel + 
+smerel + yrsmarr1 + yrsmarr2 + yrsmarr3 + yrsmarr4,family = "poisson",data = affair1_train)
+m4 <- zeroinfl(naffairs ~ vryunhap + unhap + avgmarr + antirel + notrel + slghtrel + 
+                 yrsmarr2 + yrsmarr3, data = affair1_train)
+
+AIC(m3,m4)
+BIC(m3,m4)
+
+ggplot(affair1_train, aes(m3$fitted.values,m3$residuals))+
+  geom_point()+
+  xlab("fitted values") + ylab("residuals")
+
+ggplot(affair1_train, aes(m4$fitted.values,m4$residuals))+
+  geom_point()+
+  ggtitle("ZIP model")+
+  xlab("Fitted Values") + ylab("Residuals")
+
+plot(m3$fitted.values,m3$residuals)
+plot(m4$fitted.values,m4$residuals)
+
+# models from forward AIC
+
+m5 <- glm(naffairs ~ unhap + vryunhap + antirel + slghtrel + yrsmarr2 + 
+            vryhap,family = "poisson",data = affair1_train)
+m6 <- zeroinfl(naffairs ~ unhap + smerel + yrsmarr2 + slghtrel + yrsmarr3 + 
+                 vryunhap + avgmarr + antirel + notrel,data = affair1_train)
+
+AIC(m5,m6)
+BIC(m5,m6)
+
+plot(m5$fitted.values,m5$residuals)
+plot(m6$fitted.values,m6$residuals)
+
+# models from backward BIC
+
+m7 <- glm(naffairs ~ kids + vryunhap + unhap + avgmarr + hapavg + antirel +
+slghtrel + smerel + yrsmarr1 + yrsmarr2 + yrsmarr3, family = "poisson", data = affair1_train)
+m8 <- zeroinfl(naffairs ~ vryunhap + unhap + antirel + notrel + slghtrel + yrsmarr2 + 
+                 yrsmarr3, data = affair1_train)
+
+m11 <- zeroinfl(naffairs ~ vryunhap + unhap + slghtrel + smerel + yrsmarr1 + 
+                 yrsmarr2 + yrsmarr3 | kids + avgmarr + antirel + hapavg, data = affair1_train)
+
+AIC(m7,m8)
+BIC(m7,m8)
+
+plot(m7$fitted.values,m7$residuals)
+plot(m8$fitted.values,m8$residuals)
+plot(m11$fitted.values,m11$residuals)
+
+#models from forward BIC
+
+m9 <- glm(naffairs ~ unhap + vryunhap + antirel + slghtrel,
+family = "poisson", data =affair1_train)
+m10 <- zeroinfl(naffairs ~ unhap + smerel + yrsmarr2 + slghtrel + yrsmarr3, data = affair1_train)
+
+AIC(m9,m10)
+BIC(m9,m10)
+
+plot(m9$fitted.values,m9$residuals)
+plot(m10$fitted.values,m10$residuals)
+
+
+# Finding the best model
+AIC(m4,m6,m8,m10)
+AIC(m3,m5,m7,m9)
+BIC(m4,m6,m8,m10)
+
+detach(affair1_train)
+attach(affair1_test)
+pred1 = predict(m10,newdata = affair1_test)
+output1 <- data.frame(ID = 1:181, numaffairs = pred1)
+mean(output1$numaffairs)
+
+mean(affair1_test$naffairs)
+
+
+
+
+###############
+# Change of variables years married into one
+
+detach(affair1_test)
+attach(affairs)
+
+affairs$yrsmarr1[affairs$yrsmarr1==1]<-0.75
+affairs$yrsmarr2[affairs$yrsmarr2==1]<-1.5
+affairs$yrsmarr3[affairs$yrsmarr3==1]<-4
+affairs$yrsmarr4[affairs$yrsmarr4==1]<-7
+affairs$yrsmarr5[affairs$yrsmarr5==1]<-10
+affairs$yrsmarr6[affairs$yrsmarr6==1]<-15
+
+library(tidyr)
+affair2=unite(affairs,yearsmarr,yrsmarr1:yrsmarr2)
+affair2=unite(affair2,yearsmarr,yearsmarr:yrsmarr3)
+affair2=unite(affair2,yearsmarr,yearsmarr:yrsmarr4)
+affair2=unite(affair2,yearsmarr,yearsmarr:yrsmarr5)
+affair2=unite(affair2,yearsmarr,yearsmarr:yrsmarr6)
+
+affair2$yearsmarr[affair2$yearsmarr=="0_0_0_0_10_0"]<-10
+affair2$yearsmarr[affair2$yearsmarr=="0_0_4_0_0_0"]<-4
+affair2$yearsmarr[affair2$yearsmarr=="0_1.5_0_0_0_0"]<-1.5
+affair2$yearsmarr[affair2$yearsmarr=="0_0_0_0_0_15"]<-15
+affair2$yearsmarr[affair2$yearsmarr=="0.75_0_0_0_0_0"]<-0.75
+affair2$yearsmarr[affair2$yearsmarr=="0_0_0_7_0_0"]<-7
+
+affair2$yearsmarr<-as.numeric(affair2$yearsmarr)
+
+dt = sort(sample(nrow(affair2),nrow(affair2)*.7))
+affair2_train = affair2[dt,]
+affair2_test = affair2[-dt,]
+detach(affairs)
+attach(affair2_train)
+
+# Full models
+mod1 = glm(naffairs~ kids + vryunhap + unhap + avgmarr + hapavg + 
+                 vryhap + antirel + notrel + slghtrel + smerel + vryrel + 
+                 yearsmarr, family = "poisson",data = affair2_train)
+
+mod3 = zeroinfl(naffairs ~ kids + vryunhap + unhap + avgmarr + hapavg + antirel + 
+                  notrel + slghtrel + smerel + yearsmarr,data = affair2_train)
+
+
+
+#Backward AIC
+backAIC3 <- step(mod1,direction="backward", data=affair2_train)
+backAIC4 <- step(mod3,direction="backward", data=affair2_train)
+
+#Forward AIC
+mint1 <- glm(naffairs~1,data=affair2_train)
+forwardAIC3 <- step(mint1,scope=list(lower=~1,upper=~kids + vryunhap + unhap + avgmarr +
+hapavg + vryhap + antirel + notrel + slghtrel + smerel + vryrel + yearsmarr),
+direction = "forward",data=affair2_train)
+mint2 <- zeroinfl(naffairs~1,data = affair2_train)
+forwardAIC4 <- step(mint2,scope=list(lower=~1,upper = ~ kids + vryunhap + unhap + avgmarr +
+hapavg + antirel +  notrel + slghtrel + smerel + yearsmarr),
+direction = "forward",data=affair2_train)
+
+#Backward BIC
+n1=length(mod1$residuals)
+backBIC3 <- step(mod1,direction="backward", data=affair2_train,k=log(n1))
+n2=length(mod3$residuals)
+backBIC4 <- step(mod3,direction="backward", data=affair2_train,k=log(n2))
+
+#Forward BIC
+forwardBIC3 <- step(mint1,scope=list(lower=~1,upper=~kids + vryunhap + unhap + avgmarr +
+hapavg + vryhap + antirel + notrel + slghtrel + smerel + vryrel +yearsmarr),
+direction = "forward",data=affair2_train,k=log(n1))
+forwardBIC4 <- step(mint2,scope=list(lower=~1,upper=~kids + vryunhap + unhap + avgmarr +
+hapavg + antirel + notrel + slghtrel + smerel + yearsmarr,k=log(n2)))
+
+par(mfrow=c(1,2))
+# models from backward AIC
+
+mod4 <- glm(naffairs ~ kids + vryunhap + unhap + avgmarr + hapavg + antirel + 
+              notrel + slghtrel + smerel + yearsmarr,family = "poisson",data = affair2_train)
+mod5 <- zeroinfl(naffairs ~ unhap + avgmarr + antirel + notrel + slghtrel + yearsmarr
+                 ,data = affair2_train)
+AIC(mod4,mod5) 
+BIC(mod4,mod5) 
+
+vuong(mod4,mod5)
+
+ggplot(affair2_train, aes(mod4$fitted.values,mod4$residuals))+
+  geom_point()+
+  xlab("fitted values") + ylab("residuals")
+ggplot(affair2_train, aes(mod5$fitted.values,mod5$residuals))+
+  geom_point()+
+  xlab("fitted values") + ylab("residuals")
+
+#models from forward AIC
+
+mod6 <- glm(naffairs ~ unhap + yearsmarr + smerel + vryunhap + vryrel,
+            family = "poisson",data = affair2_train)
+mod7 <- zeroinfl(naffairs ~ unhap + yearsmarr + smerel + avgmarr + antirel + notrel + 
+                   slghtrel,data = affair2_train)
+
+AIC(mod6,mod7)
+BIC(mod6,mod7)
+
+vuong(mod6,mod7)
+
+plot(mod6$fitted.values,mod6$residuals)
+plot(mod7$fitted.values,mod7$residuals)
+
+#models from backward BIC
+
+mod8 <- glm(naffairs ~ vryunhap + unhap + avgmarr + hapavg + antirel + notrel + 
+               slghtrel + yearsmarr,family = "poisson",data = affair2_train)
+mod9 <- zeroinfl(naffairs ~ unhap + antirel + notrel + slghtrel + yearsmarr,data = affair2_train)
+
+AIC(mod8,mod9)
+BIC(mod8,mod9)
+
+vuong(mod8,mod9)
+
+ggplot(affair2_train, aes(mod8$fitted.values,mod8$residuals))+
+  geom_point()+
+  ggtitle("Poisson Model")+
+  xlab("fitted values") + ylab("residuals")
+ggplot(affair2_train, aes(mod9$fitted.values,mod9$residuals))+
+  geom_point()+
+  ggtitle("ZIP Model")+
+  xlab("fitted values") + ylab("residuals")
+
+#models from forward BIC
+
+mod10 <- glm(naffairs ~ unhap + yearsmarr + smerel,family = "poisson",data=affair2_train)
+mod11 <- zeroinfl(naffairs ~ unhap + yearsmarr + avgmarr + antirel + notrel + slghtrel,
+                  data = affair2_train)
+AIC(mod10,mod11)
+BIC(mod10,mod11)
+
+vuong(mod10,mod11)
+
+plot(mod10$fitted.values,mod10$residuals)
+plot(mod11$fitted.values,mod11$residuals)
+
+
+#Finding The best models
+AIC(mod5,mod7,mod9,mod11)
+BIC(mod5,mod7,mod9,mod11)
+AIC(mod4,mod6,mod8,mod10)
+BIC(mod4,mod6,mod8,mod10)
+
+
+#best models: mod9, mod5
+
+detach(affair2_train)
+attach(affair2_test)
+pred2 = predict(mod9,newdata = affair2_test)
+pred3 = predict(mod5,newdata = affair2_test)
+output2 <- data.frame(ID = 1:181, numaffairs = pred2)
+output3 <- data.frame(ID = 1:181, numaffairs = pred3)
+mean(output2$numaffairs)
+mean(output3$numaffairs)
+mean(affair2_test$naffairs)
+detach(affair2_test)
