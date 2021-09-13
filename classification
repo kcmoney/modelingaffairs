@@ -1,0 +1,189 @@
+library(COUNT)
+library(MASS)
+data(affairs)
+
+##change response variable to binary
+data <- affairs
+junk <- 1 * (data$naffairs > 0)
+data$naffairs = junk
+
+##split
+dt = sort(sample(nrow(data), nrow(data)*.7))
+train<-data[dt,]
+test<-data[-dt,]
+
+##lda
+model <- lda(naffairs~., data = train)
+predict_lda <- predict(model, test)
+
+table(observed = test$naffairs, predicted = predict_lda$class)
+junk <- 1 * (predict_lda$class == test$naffairs)
+error <- 1 - (sum(junk)/length(junk))
+error
+
+##qda (cut for for not liking the data)
+model2 <- qda(naffairs~., data = train)
+predict_qda <- predict(model2, test)
+
+table(observed = test$naffairs, predicted = predict_qda$class)
+junk <- 1 * (predict_qda$class == test$naffairs)
+error <- 1 - (sum(junk)/length(junk))
+error
+
+##kernel classification
+kereg=function(y, Xdata, newX, h){                # y-data is in y and x-data in Xdata. newX is a single d-dim x-point to be classified.
+  nn=length(y)
+  dum1=matrix(rep(newX,nn), nrow=nn, byrow=TRUE)
+  dum2=(Xdata-dum1)^2
+  dum3=apply(dum2, 1, sum)/h^2
+  answer=sum(y*exp(-dum3))
+  return(answer) }
+
+kern.reg=function(y, Xdata, X.points, h){         # X.points has more than one X.points
+  n0=length(X.points[,1])
+  answer=rep(0,n0)
+  for(i in 1:n0){
+    answer[i]= kereg(y, Xdata, X.points[i,], h)       # makes a call on the above function
+  }
+  return(answer) }
+
+kern.reg_CROSS=function(y, Xdata, X.points, h){         # X.points has one row
+  n0=length(X.points)
+  answer=rep(0,n0)
+  for(i in 1:n0){
+    answer[i]= kereg(y, Xdata, X.points, h)       # makes a call on the above function
+  }
+  return(answer) }
+
+##cross validation for kernel bandwidth
+find_cross=function(distX, distY) {
+  h <- .0001
+  h_vec <- NULL
+  error_vec <- NULL
+  mykern <- NULL
+  mykern2 <- NULL
+  hold_y <- NULL
+  
+  for(j in 1:200) {
+    for (i in 1:length(distY)){
+      holdX = distX[i,]
+      holdY = distY[i]
+      this_dataX = distX[-i,]
+      this_dataY = distY[-i]
+      mykern <- c(mykern, kern.reg_CROSS(this_dataY, this_dataX, holdX, h))
+      mykern2 <- c(mykern2, kern.reg_CROSS((1 - this_dataY), this_dataX, holdX, h))
+      hold_y <- c(hold_y, rep(holdY,d))
+      
+    }
+    junk <- 1 * (mykern > mykern2)
+    junk2 <- 1 * (junk == hold_y)
+    error <- 1 - (sum(junk2)/length(junk2))
+    h_vec <- c(h_vec, h)
+    error_vec <- c(error_vec, error)
+    h = h + .01
+    mykern <- NULL
+    mykern2 <- NULL
+    hold_y <- NULL
+  }
+  
+  cross_h=h_vec[which.min(error_vec)]
+  return(cross_h)
+}
+
+d = 17 #x-variables
+distX <- as.matrix(train[,-1])
+distY <- train[,1]
+
+find_cross(distX, distY)
+
+##hold out
+find_holdout=function(distX, distY) {
+  
+  avg_error <- matrix(,nrow=200,ncol=20)
+  
+  for(j in 1:20) {
+    ind = sample(1:nrow(distX), nrow(distX) * .7)
+    trainX <- distX[ind,]
+    testX <- distX[-ind,]
+    trainY <- distY[ind]
+    testY <- distY[-ind]
+    
+    h <- .0001
+    h_vec <- NULL
+    error_vec <- NULL
+    
+    for(i in 1:200) {
+      mykern <- kern.reg(trainY, trainX, testX, h)
+      mykern2 <- kern.reg((1-trainY), trainX, testX, h)
+      junk <- 1 * (mykern > mykern2)
+      junk2 <- 1 * (junk == testY)
+      error <- 1 - (sum(junk2)/length(junk2))
+      h_vec <- c(h_vec, h)
+      error_vec <- c(error_vec, error)
+      h = h + .01
+    }
+    avg_error[,j] = error_vec
+  }
+  
+  hold_avg <- rowSums(avg_error)/20
+  hold_h=h_vec[which.min(hold_avg)]
+  return(hold_h)
+}
+
+find_holdout(distX, distY)
+
+## test kernel
+testX <- as.matrix(test[,-1])
+testY <- test[,1]
+h_in = .8201
+
+mykern <- kern.reg(distY, distX, testX, h=h_in)
+mykern2 <- kern.reg((1-distY), distX, testX, h=h_in)
+kernpred <- 1 * (mykern > mykern2)
+junk2 <- 1 * (kernpred == testY)
+error <- 1 - (sum(junk2)/length(junk2))
+error
+table(observed = test$naffairs, predicted = kernpred)
+
+##monte carlo runs
+lda_error <- NULL
+cross_error <- NULL
+vec_h_cross <- NULL
+holdout_error <- NULL
+vec_h_holdout <- NULL
+d = 17
+
+for (i in 1:20){
+  set.seed(i)
+  dt = sort(sample(nrow(data), nrow(data)*.7))
+  train<-data[dt,]
+  test<-data[-dt,]
+  distX <- as.matrix(train[,-1])
+  distY <- train[,1]
+  testX <- as.matrix(test[,-1])
+  testY <- test[,1]
+  
+  model <- lda(naffairs~., data = train)
+  predict_lda <- predict(model, test)
+  junk <- 1 * (predict_lda$class == test$naffairs)
+  error <- 1 - (sum(junk)/length(junk))
+  lda_error <- c(lda_error, error)
+  
+  cross_h = find_cross(distX, distY)
+  crosskern <- kern.reg(distY, distX, testX, h=cross_h)
+  crosskern2 <- kern.reg((1-distY), distX, testX, h=cross_h)
+  kernpred_c <- 1 * (crosskern > crosskern2)
+  junk2 <- 1 * (kernpred_c == testY)
+  error2 <- 1 - (sum(junk2)/length(junk2))
+  cross_error <- c(cross_error, error2)
+  vec_h_cross <- c(vec_h_cross, cross_h)
+  
+  holdout_h <- find_holdout(distX, distY)
+  holdkern <- kern.reg(distY, distX, testX, h=holdout_h)
+  holdkern2 <- kern.reg((1-distY), distX, testX, h=holdout_h)
+  kernpred_h <- 1 * (holdkern > holdkern2)
+  junk3 <- 1 * (kernpred_h == testY)
+  error3 <- 1 - (sum(junk3)/length(junk3))
+  holdout_error <- c(holdout_error, error3)
+  vec_h_holdout <- c(vec_h_holdout, holdout_h)
+}
